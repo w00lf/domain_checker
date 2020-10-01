@@ -1,3 +1,9 @@
+# Domain checker
+
+Simple React app with GraphQl support(Appollo client, sequalize) and React-admin as the frontend framework.
+
+## Specs
+
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
 ## Available Scripts
