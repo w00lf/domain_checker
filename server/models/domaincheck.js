@@ -10,11 +10,33 @@ module.exports = (sequelize, DataTypes) => {
      * The `models/index` file will call this method automatically.
      */
     static associate(models) {
+      this.belongsTo(models.Domain, {
+        foreignKey: 'domainId'
+      });
       // define association here
     }
   };
   DomainCheck.init({
-    status: DataTypes.STRING
+    status: {
+      type: DataTypes.STRING,
+      defaultValue: "started"
+    },
+    resultImage: {
+      type: DataTypes.STRING,
+    },
+    domainId: {
+      type: DataTypes.INTEGER,
+
+      references: {
+        // This is a reference to another model
+        model: {
+          tableName: 'Domains'
+        },
+
+        // This is the column name of the referenced model
+        key: 'id',
+      }
+    }
   }, {
     sequelize,
     modelName: 'DomainCheck',

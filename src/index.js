@@ -1,8 +1,11 @@
 import * as React from 'react';
 import ReactDOM from 'react-dom';
 import { Component, cloneElement } from 'react';
-import buildGraphQLProvider from 'ra-data-graphql-simple';
+import buildGraphQLProvider, {
+    buildQuery
+} from 'ra-data-graphql-simple';
 import {
+    gql,
     ApolloProvider,
     ApolloClient,
     InMemoryCache,
@@ -21,9 +24,48 @@ import {
     DomainShow
 } from './Domains';
 import {
+    DomainCheckCreate,
+    DomainCheckEdit,
     DomainCheckList,
     DomainCheckShow
 } from './DomainChecks';
+
+const myBuildQuery = introspection => (fetchType, resource, params) => {
+    console.log('Data provider set');
+    const builtQuery = buildQuery(introspection)(fetchType, resource, params);
+
+    console.log(fetchType);
+    if (resource === 'DomainCheck' && fetchType === 'GET_LIST') {
+        return {
+            // Use the default query variables and parseResponse
+            ...builtQuery,
+            // Override the query
+            query: gql `
+                query allDomainChecks($page: Int, $perPage: Int, $sortField: String, $sortOrder: String, $filter: DomainCheckFilter) {
+                    items: allDomainChecks(page: $page, perPage: $perPage, sortField: $sortField, sortOrder: $sortOrder, filter: $filter) {
+                        id
+                        status
+                        domainId
+                        Domain {
+                            id
+                            host
+                            __typename
+                        }
+                        createdAt
+                        updatedAt
+                        __typename
+                    }
+                    total: _allDomainChecksMeta(page: $page, perPage: $perPage, filter: $filter) {
+                        count
+                        __typename
+                    }
+                }`,
+        };
+    }
+
+    return builtQuery;
+};
+
 
 const httpLink = new HttpLink({
   uri: 'http://localhost:4000/'
@@ -55,8 +97,8 @@ const apolloClient = new ApolloClient({
 
 const customReducer = (previousState = {}, args) => {
     // console.log(args);
-    console.log(previousState);
-    console.log(args.type);
+    // console.log(previousState);
+    // console.log(args.type);
     if (args.type === 'ADD_OPTIMISTIC') {
         const entries = previousState.resources[args.meta.resource].data;
         const newData = {
@@ -94,8 +136,12 @@ class App extends Component {
         this.state = { dataProvider: null };
     }
     componentDidMount() {
-        buildGraphQLProvider({ clientOptions: { uri: 'http://localhost:4000' }})
-            .then(dataProvider => this.setState({ dataProvider }));
+        buildGraphQLProvider({
+            clientOptions: {
+                uri: 'http://localhost:4000',
+            },
+            buildQuery: myBuildQuery,
+        }).then(dataProvider => this.setState({ dataProvider }));
     }
     render() {
         const { dataProvider } = this.state;
@@ -106,7 +152,7 @@ class App extends Component {
             <ApolloProvider client={apolloClient}>
                 <Admin customReducers={{ admin: customReducer }} dataProvider={dataProvider}>
                     <Resource name="Domain" list={DomainList} show={DomainShow} />
-                    <Resource name="DomainCheck" list={DomainCheckList} show={DomainCheckShow} />
+                    <Resource name="DomainCheck" list={DomainCheckList} show={DomainCheckShow} create={DomainCheckCreate} edit={DomainCheckEdit} />
                 </Admin>
             </ApolloProvider>
         );

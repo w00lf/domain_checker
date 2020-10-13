@@ -6,9 +6,19 @@ const typeDefs = `
     updatedAt: Date
   }
 
+  enum Status {
+    created
+    started
+    done
+    error
+  }
+
   type DomainCheck {
     id: ID!
-    status: String
+    status: Status!
+    domainId: ID!
+    imageUrl: String
+    Domain: Domain
     createdAt: Date
     updatedAt: Date
   }
@@ -43,7 +53,7 @@ const typeDefs = `
     createDomain(host: String!): Domain!
     updateDomain(id: ID!, host: String!): Domain!
     deleteDomain(id: ID!): Domain
-    createDomainCheck(status: String!): DomainCheck!
+    createDomainCheck(domainId: ID!): DomainCheck!
     updateDomainCheck(id: ID!, status: String!): DomainCheck!
     deleteDomainCheck(id: ID!): DomainCheck
   }
@@ -56,12 +66,14 @@ const typeDefs = `
   input DomainCheckFilter {
     q: String
     id: ID
+    ids: [ID]
     status: String
   }
 
   input DomainFilter {
     q: String
     id: ID
+    ids: [ID]
     host: String
   }
 

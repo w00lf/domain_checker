@@ -1,17 +1,34 @@
+require('dotenv').config()
+
 const {
   GraphQLServer,
-  PubSub,
 } = require('graphql-yoga');
 const typeDefs = require('./schema');
 const {
   Domain,
   DomainCheck
-} = require('./models/index');
+} = require('../models/index');
 const { withFilter } = require('apollo-server');
-const pubsub = new PubSub();
+const { RedisPubSub } = require('graphql-redis-subscriptions');
+const pubsub = new RedisPubSub();
+const Queue = require('bull');
+const domainCheckQueue = new Queue('domain check');
+const {
+  downloadUrl
+} = require('./upload_helpers');
 
 function newDomainCheckubscribe(parent, args, context, info) {
   return context.pubsub.asyncIterator("NEW_DOMAIN_CHECK")
+}
+
+const updateDomainCheck = async (parent, args, context, _info) => {
+  let domainCheck = await DomainCheck.findByPk(args.id);
+  domainCheck.set({
+    status: args.status,
+  });
+  await domainCheck.save();
+  context.pubsub.publish("DOMAIN_CHECK_UPDATED", domainCheck.dataValues);
+  return domainCheck;
 }
 
 const resolvers = {
@@ -25,7 +42,7 @@ const resolvers = {
       limit = 10
     }) => Domain.findAndCountAll({
       offset: offset,
-      limit: limit
+      limit: limit,
     }),
     allDomains: async (_, {
         page = 1,
@@ -41,6 +58,7 @@ const resolvers = {
             [sortField, sortOrder]
           ]
         });
+        console.log(result.rows);
         return result.rows;
       },
       _allDomainsMeta: async (_, {
@@ -54,7 +72,10 @@ const resolvers = {
         return result;
       },
     DomainCheck: async (parent, args, context, _info) => {
-      const domainCheck = await DomainCheck.findByPk(args.id);
+      const domainCheck = await DomainCheck.findByPk(args.id, {
+        include: Domain
+      });
+      domainCheck.imageUrl = downloadUrl(domainCheck, domainCheck.resultImage);
       return domainCheck;
     },
     domainChecks: (_, {
@@ -62,7 +83,8 @@ const resolvers = {
       limit = 10
     }) => DomainCheck.findAndCountAll({
       offset: offset,
-      limit: limit
+      limit: limit,
+      include: Domain,
     }),
     allDomainChecks: async (_, {
         page = 1,
@@ -74,9 +96,14 @@ const resolvers = {
       const result = await DomainCheck.findAndCountAll({
                               offset: (page * perPage),
                               limit: perPage,
-                              order: [[sortField, sortOrder]]
+                              order: [[sortField, sortOrder]],
+                              include: Domain,
                             });
-      return result.rows;
+      const resultEntries = result.rows.map((entry) => {
+        if (entry.resultImage) entry.imageUrl = downloadUrl(entry, entry.resultImage);
+        return entry;
+      });
+      return resultEntries;
     },
     _allDomainChecksMeta: async (_, { page = 1, perPage = 10 }) => {
       const result = await DomainCheck.findAndCountAll({
@@ -104,19 +131,15 @@ const resolvers = {
     createDomainCheck: async (parent, args, context, _info) => {
       const domainCheck = await DomainCheck.create({
         status: args.status,
+        domainId: args.domainId
       });
-      context.pubsub.publish("NEW_DOMAIN_CHECK", domainCheck)
+      context.pubsub.publish("NEW_DOMAIN_CHECK", domainCheck);
+      await domainCheckQueue.add({
+        id: domainCheck.id
+      });
       return domainCheck;
     },
-    updateDomainCheck: async (parent, args, context, _info) => {
-      let domainCheck = await DomainCheck.findByPk(args.id);
-      domainCheck.set({
-        status: args.status,
-      });
-      await domainCheck.save();
-      context.pubsub.publish("DOMAIN_CHECK_UPDATED", domainCheck.dataValues);
-      return domainCheck;
-    },
+    updateDomainCheck,
   },
   Subscription: {
     domainCheckAdded: {
@@ -146,4 +169,6 @@ const server = new GraphQLServer({
     }
   },
 });
+const express = require('express');
+server.express.use('/uploads', express.static(process.env.BASE_UPLOADS_PATH));
 server.start(() => console.log('Server is running on localhost:4000'));
